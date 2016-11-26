@@ -22,7 +22,7 @@ tmpLog=/tmp/pihole-install.log
 instalLogLoc=/etc/pihole/install.log
 setupVars=/etc/pihole/setupVars.conf
 
-webInterfaceGitUrl="https://github.com/pi-hole/AdminLTE.git"
+webInterfaceGitUrl="https://github.com/rmclellan/AdminLTE.git"
 webInterfaceDir="/var/www/html/admin"
 piholeGitUrl="https://github.com/pi-hole/pi-hole.git"
 piholeFilesDir="/etc/.pihole"
@@ -815,9 +815,85 @@ configureFirewall() {
 		&& firewall-cmd --permanent --add-port=53/udp && firewall-cmd --reload) || echo "::: FirewallD not enabled"
 	elif [ -x "$(command -v iptables)" ]; then
 		echo "::: Configuring iptables for httpd and dnsmasq.."
-		iptables -A INPUT -p tcp -m tcp --dport 80 -j ACCEPT
-		iptables -A INPUT -p tcp -m tcp --dport 53 -j ACCEPT
-		iptables -A INPUT -p udp -m udp --dport 53 -j ACCEPT
+		echo "Rule 0 (tun0)"
+		# 
+		IPTABLES -N In_RULE_0
+		IPTABLES -A INPUT -i tun0   -j In_RULE_0
+		IPTABLES -A In_RULE_0  -j LOG  --log-level info --log-prefix "RULE 0 -- DENY "
+		IPTABLES -A In_RULE_0  -j DROP
+		# 
+		# Rule 2 (tun0)
+		# 
+		echo "Rule 2 (tun0)"
+		# 
+		IPTABLES -N In_RULE_2
+    for i_tun0 in $i_tun0_list
+    do
+    test -n "$i_tun0" && $IPTABLES -A INPUT -i tun0   -s $i_tun0   -j In_RULE_2 
+    done
+    for i_eth0 in $i_eth0_list
+    do
+    test -n "$i_eth0" && $IPTABLES -A INPUT -i tun0   -s $i_eth0   -j In_RULE_2 
+    done
+    for i_tun0 in $i_tun0_list
+    do
+    test -n "$i_tun0" && $IPTABLES -A FORWARD -i tun0   -s $i_tun0   -j In_RULE_2 
+    done
+    for i_eth0 in $i_eth0_list
+    do
+    test -n "$i_eth0" && $IPTABLES -A FORWARD -i tun0   -s $i_eth0   -j In_RULE_2 
+    done
+		IPTABLES -A In_RULE_2  -j LOG  --log-level info --log-prefix "RULE 2 -- DENY "
+		IPTABLES -A In_RULE_2  -j DROP
+		# 
+		# Rule 4 (global)
+		# 
+		echo "Rule 4 (global)"
+		# 
+		IPTABLES -A OUTPUT  -m state --state ESTABLISHED,RELATED  -j ACCEPT
+		IPTABLES -A INPUT  -m state --state ESTABLISHED,RELATED  -j ACCEPT
+		IPTABLES -A FORWARD  -m state --state ESTABLISHED,RELATED  -j ACCEPT
+		# 
+		# Rule 5 (global)
+		# 
+		echo "Rule 5 (global)"
+		# 
+		IPTABLES -A OUTPUT -p icmp  -m icmp  --icmp-type any  -m state --state NEW  -j ACCEPT
+		IPTABLES -A OUTPUT -p tcp -m tcp  -m multiport  --dports 53,80  -m state --state NEW  -j ACCEPT
+		IPTABLES -A OUTPUT -p udp -m udp  --dport 33434:33524  -m state --state NEW  -j ACCEPT
+		IPTABLES -A OUTPUT -p udp -m udp  -m multiport  --dports 1194,53  -m state --state NEW  -j ACCEPT
+		# 
+		# Rule 6 (eth0)
+		# 
+		echo "Rule 6 (eth0)"
+		# 
+		IPTABLES -A OUTPUT -o eth0  -p tcp -m tcp  -m multiport  --dports 445,2049,22  -m state --state NEW  -j ACCEPT
+		IPTABLES -A OUTPUT -o eth0  -p udp -m udp  --dport 2049  -m state --state NEW  -j ACCEPT
+		# 
+		# Rule 7 (eth0)
+		# 
+		echo "Rule 7 (eth0)"
+		# 
+		IPTABLES -A INPUT -i eth0  -p icmp  -m icmp  --icmp-type any  -m state --state NEW  -j ACCEPT
+		IPTABLES -A INPUT -i eth0  -p tcp -m tcp  -m multiport  --dports 9091,53,80,22  -m state --state NEW  -j ACCEPT
+		IPTABLES -A INPUT -i eth0  -p udp -m udp  --dport 53  -m state --state NEW  -j ACCEPT
+		# 
+		# Rule 8 (tun0,eth0,lo)
+		# 
+		echo "Rule 8 (tun0,eth0,lo)"
+		# 
+		IPTABLES -A INPUT -i eth0   -m state --state NEW  -j ACCEPT
+		IPTABLES -A INPUT -i lo   -m state --state NEW  -j ACCEPT
+		IPTABLES -A INPUT -i tun0   -m state --state NEW  -j ACCEPT
+		IPTABLES -A FORWARD -i eth0   -m state --state NEW  -j ACCEPT
+		IPTABLES -A FORWARD -i lo   -m state --state NEW  -j ACCEPT
+		IPTABLES -A FORWARD -i tun0   -m state --state NEW  -j ACCEPT
+		IPTABLES -A OUTPUT -o eth0   -m state --state NEW  -j ACCEPT
+		IPTABLES -A OUTPUT -o lo   -m state --state NEW  -j ACCEPT
+		IPTABLES -A OUTPUT -o tun0   -m state --state NEW  -j ACCEPT
+		IPTABLES -A FORWARD -o eth0   -m state --state NEW  -j ACCEPT
+		IPTABLES -A FORWARD -o lo   -m state --state NEW  -j ACCEPT
+		IPTABLES -A FORWARD -o tun0   -m state --state NEW  -j ACCEPT
 	else
 		echo "::: No firewall detected.. skipping firewall configuration."
 	fi
